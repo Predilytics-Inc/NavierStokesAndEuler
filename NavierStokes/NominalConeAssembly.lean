@@ -1367,6 +1367,11 @@ structure Certificate {F : Profile} (W : NominalProfile.Witness F) : Prop where
       IsTrue W.profiles F.data.h (chart (activeLeft W) (y, eta))
   outgoing : ∀ y eta : ℝ, F.data.core.holdStart ≤ y → y < OutgoingTail.tailEnd F.data →
     eta ∈ HeatedOutgoing.parameterDomain → IsTrue W.profiles F.data.h (chart W.controls.radius (y, eta))
+  /-- The axis-stage scale dominates the stability threshold of the entrance
+  coefficients. Retained from `MatchingConeBounds.PreparedBounds.scale_large`,
+  so that quantitative entrance estimates remain available for the chosen witness. -/
+  scale_stable : AxisReference.stabilityScale W.axis.preparation.inputs.coefficients.epsilon
+      (NaturalProfile.profileErrorConstant W.axis.preparation.inputs) ≤ W.axis.scale
 
 theorem Certificate.coordinates_smoothAt {F : Profile} {W : NominalProfile.Witness F}
     (hW : Certificate W) {p : Point} (hl : activeLeft W < p.1) (hr : p.1 < activeRight W)
@@ -1457,7 +1462,7 @@ annulus and the true cone in its initial collar and from the shaped hold
 through the terminal region. Every component uses the stored witness. -/
 theorem certificate : Certificate A.witness := by
   have hi := A.initial_cones
-  refine ⟨?_, hi.2, ?_⟩
+  refine ⟨?_, hi.2, ?_, ?_⟩
   · intro p hl hr heta
     have hx := (activeLeft_pos A.witness).trans hl
     by_cases hXi : p.1 ≤ NominalProfile.Xi
@@ -1476,6 +1481,9 @@ theorem certificate : Certificate A.witness := by
     · exact A.outer_relaxed (le_of_not_ge hXi) hr heta
   · intro y eta hy hend heta
     exact A.outgoing hy hend heta
+  · show AxisReference.stabilityScale A.matching.axis.preparation.inputs.coefficients.epsilon
+        (NaturalProfile.profileErrorConstant A.matching.axis.preparation.inputs) ≤ A.matching.axis.scale
+    exact (le_max_left _ _).trans ((le_max_right _ _).trans A.matching.bounds.scale_large)
 
 end Assembly
 
