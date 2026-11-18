@@ -1,5 +1,6 @@
 import NavierStokes.AnnularAuxiliary
 import NavierStokes.ModulatedCone
+import NavierStokes.ModulatedProfileJetRates
 import NavierStokes.NominalProfile
 import NavierStokes.ReservedPatches
 import NavierStokes.NominalConeAssembly
@@ -447,6 +448,10 @@ structure Witness {F : OutgoingProfile.Profile} {W : NominalProfile.Witness F}
       (ActivationStocks.profileStockOne profiles F.data.h p)
       (ActivationStocks.profileStockTwo profiles F.data.h p)
       (ModulatedCone.angularShear profiles.E p) (ModulatedCone.signedAxialShear profiles.E profiles.U p)
+  /-- The modulated axial profile stays within `1/10` of the nominal one on the
+  whole nonnegative parameter band (the frequency is chosen large enough). -/
+  amplitude_close : ∀ p : Point, 0 ≤ p.1 → p.2 ∈ d.parameters →
+    |profiles.U p - W.profiles.U p| ≤ 1 / 10
 
 theorem exists_witness {F : OutgoingProfile.Profile} {W : NominalProfile.Witness F}
     (d : LoopData W) : Nonempty (Witness d) := by
@@ -485,7 +490,7 @@ theorem exists_witness {F : OutgoingProfile.Profile} {W : NominalProfile.Witness
     intro eta heta X hX
     rw [(d.parameter.fields_eq ((repairPatch W).left_pos.trans hX.1).le (d.band_target heta)).1]
     exact (nominal_patch_fields W eta hX).2
-  obtain ⟨N, c, hc, hN, hcone, hrows, _⟩ := ModulatedCone.Repaired.exists_with_moment_repair
+  obtain ⟨H, N₀, hN₀, hall, hrates⟩ := ModulatedProfileJetRates.exists_with_moment_repair_all_jets
     d.modulation r d.parameter.f d.angularAux d.parameter.U
     (isCompact_Icc.prod isCompact_Icc) (fun _ hp => hp.1)
     d.a_smooth d.m_smooth d.p₁_smooth d.p₂_smooth
@@ -514,6 +519,16 @@ theorem exists_witness {F : OutgoingProfile.Profile} {W : NominalProfile.Witness
     (fun _ hp => hp) (fun _ hp => hp)
     (-1 / 2 - F.data.core.lam) (FiveProfileMoments.good_outgoing _ F.data.core.lam_pos)
     hpatchU hpatchE
+  obtain ⟨Nq, Cq, _, hCq, hrate⟩ := hrates 0
+  obtain ⟨Nε, hNε⟩ := exists_nat_gt (max Nq (10 * Cq))
+  let N : ℕ := max N₀ Nε
+  have hN : 0 < N := hN₀.trans_le (le_max_left _ _)
+  have hNbig : max Nq (10 * Cq) < (N : ℝ) :=
+    hNε.trans_le (by exact_mod_cast le_max_right N₀ Nε)
+  obtain ⟨hcone, hrows, hout⟩ := hall N (le_max_left _ _)
+  obtain ⟨hrU, _⟩ := hrate (N : ℝ) ((le_max_left _ _).trans hNbig.le)
+  let c : ℝ → ModulatedHistories.Coeff := H.coefficients N
+  have hc : ContDiff ℝ ∞ c := H.smooth N
   let R := ModulatedCone.Repaired.profileRepair (P N) (repairPatch W)
     (ReservedPatches.xAmplitude F W.controls.radius) c
     (ReservedPatches.xAmplitude_contDiff F W.controls.radius) hc
@@ -544,7 +559,7 @@ theorem exists_witness {F : OutgoingProfile.Profile} {W : NominalProfile.Witness
     intro X hx eta he row
     exact histories_eq_of_nonnegative Q R h0 hx (fun _ hx => (hQR _ hx.1 he).1)
       (fun _ hx => (hQR _ hx.1 he).2) row
-  refine ⟨⟨r, N, hN, c, hc, Q, hQf, hQU, rfl, ?_, ?_⟩⟩
+  refine ⟨⟨r, N, hN, c, hc, Q, hQf, hQU, rfl, ?_, ?_, ?_⟩⟩
   · intro eta he X hx
     have hXp : 0 ≤ X := (repairPatch W).left_pos.le.trans ((repairPatch W).ordered.le.trans hx)
     calc
@@ -573,6 +588,33 @@ theorem exists_witness {F : OutgoingProfile.Profile} {W : NominalProfile.Witness
     refine ⟨he.1.symm ▸ hcR.1, ?_⟩
     rw [hs.1, hs.2, hsh.1, hsh.2]
     exact hcR.2
+  · intro p hx he
+    have hband : p.2 ∈ band d.etaRadius := ⟨he.1.le, he.2.le⟩
+    have hW : d.parameter.U p = W.profiles.U p :=
+      (d.parameter.fields_eq hx (d.parameters_target he)).2
+    have hQ : Q.U p = R.U p := (hQR p hx he).2
+    have hRU : |R.U p - d.parameter.U p| ≤ Cq / N := by
+      by_cases hX : p.1 ≤ (repairPatch W).right
+      · have h := (hrU p.1 p.2 hX hband).2
+        simp only [iteratedDeriv_zero, Prod.mk.eta] at h
+        exact h
+      · have hnot : p.1 ∉ Ioo (repairPatch W).left (repairPatch W).right :=
+          fun h => hX h.2.le
+        have hnotW : p.1 ∉ Ioc d.modulation.left d.modulation.right := by
+          intro h
+          exact hX (h.2.trans (d.before_repair.trans (repairPatch W).ordered).le)
+        have h1 : R.U p = (P N).U p := (hout p hnot).2.1
+        rw [h1, (hP N).2.1]
+        simp only [ModulatedHistories.localizedU, ModulatedHistories.splice, hnotW,
+          ↓reduceIte, sub_self, abs_zero]
+        exact div_nonneg hCq.le (Nat.cast_nonneg N)
+    have hCN : Cq / N ≤ 1 / 10 := by
+      have hNpos : (0 : ℝ) < N := by exact_mod_cast hN
+      rw [div_le_iff₀ hNpos]
+      have := (le_max_right Nq (10 * Cq)).trans_lt hNbig
+      linarith
+    rw [hQ, ← hW]
+    exact hRU.trans hCN
 
 namespace Witness
 
